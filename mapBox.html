@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Add a default marker</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+<script src="pointData.js"></script>
+<script src="mapbox.min.js"></script>
+<!-- <script src="turf.min.js"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@5/turf.min.js"></script>
+<link href="mapBox.css" rel="stylesheet" />
+
+
+</head>
+<body>
+<div id="map" style="width:698px;height:698px;"></div>
+<!-- <div style="width: 800px; height:800px;background-color: red;"></div> -->
+ 
+<script>
+  markers = [];
+  dblLock = false;
+  // mapboxgl.accessToken = '';
+	mapboxgl.accessToken = 'pk.eyJ1IjoiaG91YmlhbyIsImEiOiJjajdnNjVicDYxNHAzMndvMmI4NGgzaTZrIn0.ZvpHO1bVunIhgsBq_nVYFQ';
+
+
+  // 地图缩放与量程对应关系
+  // 18.675 -   50m
+  // 17.675 -  100m
+  // 16.676 -  200m
+  // 15.355 -  500m
+  // 14.77 -  750m
+  // 14.355 - 1000m
+  var map = new mapboxgl.Map({
+  container: 'map',
+  // style: 'mapbox://styles/mapbox/streets-v11',
+  zoom: 14.355,
+  center: [116.382068, 39.913359]
+  });
+
+  // disable map rotation
+  map.dragRotate.disable();
+  // disable map drag and drop
+  map.dragPan.disable();
+  // disable map zoom
+  map.scrollZoom.disable();
+  map.doubleClickZoom.disable()
+
+  map.on('load', function () {
+    console.log('load')
+  
+});
+
+
+  var createGeoJSONCircle = function(center, radiusInKm, points) {
+      if(!points) points = 64;
+
+      var coords = {
+        latitude: center[1],
+        longitude: center[0]
+      };
+
+      var km = radiusInKm;
+
+      var ret = [];
+      var distanceX = km/(111.320*Math.cos(coords.latitude*Math.PI/180));
+      var distanceY = km/110.574;
+
+      var theta, x, y;
+      for(var i=0; i<points; i++) {
+          theta = (i/points)*(2*Math.PI);
+          x = distanceX*Math.cos(theta);
+          y = distanceY*Math.sin(theta);
+
+          ret.push([coords.longitude+x, coords.latitude+y]);
+      }
+      ret.push(ret[0]);
+
+      return {
+          "type": "geojson",
+          "data": {
+              "type": "FeatureCollection",
+              "features": [{
+                  "type": "Feature",
+                  "geometry": {
+                      "type": "Polygon",
+                      "coordinates": [ret]
+                  }
+              }]
+          }
+      };
+  };
+
+  map.addSource("polygon", createGeoJSONCircle([116.382068, 39.913359], 2000 / 1000 / 2));
+
+  map.addLayer({
+      "id": "polygon",
+      "type": "fill",
+      "source": "polygon",
+      "layout": {},
+      "paint": {
+          "fill-color": "blue",
+          "fill-opacity": 0.6
+      }
+  });
+
+  // Create a GeoJSON source with an empty lineString.
+  var geojson = {
+    "type": "FeatureCollection",
+      "features": [{
+        "type": "Feature",
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            // [0, 0]
+          ]
+        }
+      }]
+  };
+
+  var animation; // to store and cancel the animation
+  
+  // add the line which will be modified in the animation
+  map.addLayer({
+    'id': 'line-animation',
+    'type': 'line',
+    'source': {
+      'type': 'geojson',
+      'data': geojson
+    },
+    'layout': {
+      'line-cap': 'round',
+      'line-join': 'round'
+    },
+    'paint': {
+      'line-color': '#ed6498',
+      'line-width': 5,
+      'line-opacity': .8
+    }
+  });
+  
+  animateLine();
+
+  console.log(point_data.length)
+
+  var num = 0
+
+  // animated in a circle as a sine wave along the map.
+  function animateLine(timestamp) {
+    if (num !== undefined) {
+      // console.log(point_data[num])
+      geojson.features[0].geometry.coordinates.push([point_data[num].lng, point_data[num].lat]);
+      // then update the map
+      map.getSource('line-animation').setData(geojson);
+      num += 1
+      num = num % point_data.length
+      if (num === 0) {
+        geojson.features[0].geometry.coordinates = [];
+      }
+    }
+
+    // Request the next frame of the animation.
+    animation = requestAnimationFrame(animateLine);
+  }
+
+  const vm = this
+  map.on('dblclick', function(e) {
+
+    
+    if (vm.dblLock === true) {
+      return
+    }
+    // var marker = new mapboxgl.Marker()
+    // .setLngLat([e.lngLat.lng, e.lngLat.lat])
+    // .addTo(map);
+
+    addMark(e.lngLat)
+    console.log('addMark', e)
+
+    // map rotate
+    map.rotateTo(45)
+
+    // map zoom 
+    // map.zoomTo(zoomNumber, { duration: 1000 });
+
+    // update core location
+    // map.panTo(e.lngLat)
+  });
+
+
+  map.on('mousemove', function(e) {
+    // console.log('111', e)
+  });
+
+  function checkMarkersLimitOverflow() {
+    const markerLimit = 5;
+   
+    var markersCnt = this.markers.length;
+    if (markersCnt >= markerLimit) {
+      const overflowCnt = markersCnt - markerLimit + 1;
+      for (let i = 0; i < overflowCnt; i++) {
+        this.markers[i].remove();
+      }
+    }
+  }
+
+  function unSelectMarkerAll() {
+    var markersCnt = this.markers.length
+    for (let i = 0; i < markersCnt; i++) {
+      const marker = this.markers[i];
+      unSelectMarker(marker.getElement())
+    }
+  }
+
+  function unSelectMarker(markerElement) {
+    markerElement.style.backgroundImage = 'url(http://192.168.1.132/static/img/cros_shair_old.png)';
+  }
+
+  function selectMarker(markerElement) {
+    markerElement.style.backgroundImage = 'url(http://192.168.1.132/static/img/cros_shair.png)';
+  }
+
+  function markerClickHandle(marker) {
+    unSelectMarkerAll()
+    selectMarker(marker.srcElement)
+  }
+
+  function markerDBClickHandle(marker) {
+    console.log(this.markers)
+    console.log('marker dblclick handle', marker)
+  }
+
+  function addMark(lngLat) {
+    this.checkMarkersLimitOverflow()
+    this.unSelectMarkerAll()
+    // create a DOM element for the marker
+    var el = document.createElement('div');
+    el.className = 'marker';
+    el.style.width = '32px';
+    el.style.height = '32px';
+    selectMarker(el)
+
+    const vm = this
+    el.addEventListener('click', markerClickHandle);
+
+    el.addEventListener('dblclick', function(e) {
+      vm.dblLock = true;
+      markerDBClickHandle(e)
+      setTimeout(() => {
+        vm.dblLock = false;
+      }, 100);
+    });
+
+    // add marker to map
+    var marker = new mapboxgl.Marker(el)
+    .setLngLat(lngLat)
+    .addTo(map);
+    // add marker manage
+    this.markers.push(marker)
+    console.log()
+    var dis = calcDistance([marker.getLngLat().lng,marker.getLngLat().lat], [marker.getLngLat().lng,marker.getLngLat().lat])
+    console.log('dis',dis)
+    if (this.markers.length > 1) {
+      var bearing = turf.bearing([this.markers[0].getLngLat().lng,this.markers[0].getLngLat().lat], [this.markers[1].getLngLat().lng,this.markers[1].getLngLat().lat]);
+      console.log(bearing - 45, {
+      units:'kilometers'
+    })
+    }
+  }
+
+  // 计算两个点之间的距离
+  function calcDistance(from,to) {
+    var f = turf.point(from)
+    var t = turf.point(to)
+    var distance = turf.distance(f,t,{
+      units:'kilometers'
+    })
+    distance = distance * 1000
+    return distance
+  }
+
+  // 计算两个点之间的角度
+  function calcBearing(from,to) {
+    var f = turf.point(from)
+    var t = turf.point(to)
+    var bearing =  turf.bearing(f,t,{
+      units:'kilometers'
+    })
+    bearing = bearing < 0? 360 + bearing: bearing
+    return bearing
+  }
+  
+  var distance = calcDistance([116.382068, 39.913359], [116.380746, 39.913335])
+  var bearing = calcBearing([116.382068, 39.913359], [116.380746, 39.913335])
+  console.log('distance', distance)
+  console.log('bearing', bearing)
+  
+
+  
+</script>
+
+<style>
+	
+</style>
+<style>
+  body { margin: 0; padding: 0; }
+	#map { position: absolute; top: 0; bottom: 0; width: 100%; border:1px solid red;  }
+
+  #map canvas {
+    cursor: crosshair;
+  }
+
+  .marker {
+    display: block;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+  }
+</style>
+</body>
+</html>
